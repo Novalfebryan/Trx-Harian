@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <title>Dashboard Transaksi Harian - Gerbang Tol Bandung</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    body { font-family: Arial, sans-serif; background: #f5f6fa; padding: 20px; }
+    h2 { text-align: center; }
+    .container { max-width: 1200px; margin: auto; background: #fff; padding: 20px; border-radius: 12px; box-shadow: 0px 3px 10px rgba(0,0,0,0.1); }
+    form, .filter { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 20px; }
+    form input, form select, .filter input, form button, .filter button { padding: 8px; border-radius: 6px; border: 1px solid #ccc; }
+    form button, .filter button { grid-column: span 4; background: #3498db; color: #fff; cursor: pointer; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
+    table, th, td { border: 1px solid #ddd; }
+    th, td { padding: 8px; text-align: center; }
+    th { background: #3498db; color: #fff; }
+    .btn { padding: 4px 8px; border: none; border-radius: 4px; cursor: pointer; }
+    .edit { background: #f39c12; color: #fff; }
+    .delete { background: #e74c3c; color: #fff; }
+    .export { background: #27ae60; color: #fff; padding: 10px; margin-bottom: 10px; }
+    .analysis { margin-top: 20px; padding: 15px; background: #ecf0f1; border-radius: 8px; }
+    .analysis p { margin: 6px 0; }
+    .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 15px; }
+    .gerbang-list { margin: 15px 0; padding: 15px; background: #f8f9fa; border-radius: 8px; }
+    .gerbang-item { display: flex; justify-content: space-between; align-items: center; padding: 8px; margin: 5px 0; background: white; border-radius: 4px; border: 1px solid #ddd; }
+    .delete-gerbang { background: #e74c3c; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; }
+    .gerbang-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>📊 Dashboard Transaksi Harian - Gerbang Tol Bandung</h2>
+
+    <!-- Form untuk Menambahkan Gerbang Tol -->
+    <form id="formGerbang">
+      <input type="text" id="namaGerbang" placeholder="Nama Gerbang Tol" required>
+      <button type="submit">Tambah Gerbang Tol</button>
+    </form>
+
+    <!-- Daftar Gerbang Tol -->
+    <div class="gerbang-list">
+      <div class="gerbang-header">
+        <h3>📋 Daftar Gerbang Tol</h3>
+        <span>Total: <span id="totalGerbang">0</span> gerbang</span>
+      </div>
+      <div id="listGerbang"></div>
+    </div>
+
+    <!-- Form Input -->
+    <form id="formTransaksi">
+      <input type="date" id="tanggal" required>
+      <select id="nama" required>
+        <option value="">Pilih Gerbang Tol</option>
+        <option value="GT Pasteur">GT Pasteur</option>
+        <option value="GT Kopo">GT Kopo</option>
+        <option value="GT Buah Batu">GT Buah Batu</option>
+        <option value="GT Cileunyi">GT Cileunyi</option>
+        <option value="GT Padalarang">GT Padalarang</option>
+      </select>
+      <input type="number" id="jumlah" placeholder="Jumlah" required>
+      <input type="text" id="keterangan" placeholder="Keterangan">
+      <button type="submit">Tambah Transaksi</button>
+    </form>
+
+    <!-- Filter -->
+    <div class="filter">
+      <input type="date" id="filterAwal">
+      <input type="date" id="filterAkhir">
+      <button type="button" onclick="filterData()">Filter Tanggal</button>
+      <button type="button" onclick="resetFilter()">Reset Filter</button>
+    </div>
+
+    <!-- Export -->
+    <button class="export" onclick="exportExcel()">⬇ Export ke Excel</button>
+
+    <!-- Tabel -->
+    <table id="tabelTransaksi">
+      <thead>
+        <tr>
+          <th>No</th>
+          <th>Tanggal</th>
+          <th>Gerbang Tol</th>
+          <th>Jumlah</th>
+          <th>Keterangan</th>
+          <th>Aksi</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
+    <!-- Analisis -->
+    <div class="analysis">
+      <h3>🔎 Analisis Data</h3>
+      <p>Total Transaksi: <span id="totalTransaksi">0</span></p>
+      <p>Total Jumlah: Rp <span id="totalJumlah">0</span></p>
+      <p>Rata-rata per Hari: Rp <span id="avgHarian">0</span></p>
+      <p>Rata-rata per Transaksi: Rp <span id="avgTransaksi">0</span></p>
+      <p>Hari Aktif: <span id="hariAktif">0</span> hari</p>
+      <p>Transaksi Terbesar: Rp <span id="maxTransaksi">0</span></p>
+      <p>Transaksi Terkecil: Rp <span id="minTransaksi">0</span></p>
+
+      <div class="charts">
+        <canvas id="chartHarian" height="100"></canvas>
+        <canvas id="chartPie" height="100"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Inisialisasi variabel global
+    let transaksi = JSON.parse(localStorage.getItem('transaksi')) || [];
+    let gerbangTol = JSON.parse(localStorage.getItem('gerbangTol')) || ["GT Pasteur", "GT Kopo", "GT Buah Batu", "GT Cileunyi", "GT Padalarang"];
+    let chartBar = null;
+    let chartPie = null;
+
+    // Elemen DOM
+    const tabelBody = document.querySelector('#tabelTransaksi tbody');
+    const totalTransaksi = document.getElementById('totalTransaksi');
+    const totalJumlah = document.getElementById('totalJumlah');
+    const avgHarian = document.getElementById('avgHarian');
+    const avgTransaksi = document.getElementById('avgTransaksi');
+    const hariAktif = document.getElementById('hariAktif');
+    const maxTransaksi = document.getElementById('maxTransaksi');
+    const minTransaksi = document.getElementById('minTransaksi');
+    const namaGerbangInput = document.getElementById('namaGerbang');
+    const namaSelect = document.getElementById('nama');
+    const listGerbang = document.getElementById('listGerbang');
+    const totalGerbang = document.getElementById('totalGerbang');
+
+    // Event listener untuk form gerbang
+    document.getElementById('formGerbang').addEventListener('submit', function(e){
+      e.preventDefault();
+      const namaGerbang = namaGerbangInput.value.trim();
+      
+      if(!namaGerbang) {
+        alert("Nama gerbang tidak boleh kosong!");
+        return;
+      }
+      
+      if(gerbangTol.includes(namaGerbang)){
+        alert("Nama gerbang sudah ada!");
+        return;
+      }
+
+      gerbangTol.push(namaGerbang);
+      saveGerbangTol();
+      renderGerbangTol();
+      renderListGerbang();
+      namaGerbangInput.value = '';
+      alert(`Gerbang tol "${namaGerbang}" berhasil ditambahkan!`);
+    });
+
+    // Event listener untuk form transaksi
+    document.getElementById('formTransaksi').addEventListener('submit', function(e){
+      e.preventDefault();
+      
+      const tanggal = document.getElementById("tanggal").value;
+      const nama = document.getElementById("nama").value;
+      const jumlah = parseFloat(document.getElementById("jumlah").value);
+      const keterangan = document.getElementById("keterangan").value;
+
+      if(!tanggal || !nama || isNaN(jumlah) || jumlah <= 0){
+        alert("Lengkapi data dengan benar! Jumlah harus lebih dari 0.");
+        return;
+      }
+
+      // Tambah transaksi baru
+      transaksi.push({
+        tanggal, 
+        nama, 
+        jumlah, 
+        keterangan: keterangan || '-'
+      });
+
+      // Simpan ke localStorage dan render ulang
+      saveToLocalStorage();
+      renderTabel(transaksi);
+      this.reset();
+    });
+
+    // Fungsi untuk menyimpan data ke localStorage
+    function saveToLocalStorage() {
+      localStorage.setItem('transaksi', JSON.stringify(transaksi));
+    }
+
+    // Fungsi untuk menyimpan gerbang tol ke localStorage
+    function saveGerbangTol() {
+      localStorage.setItem('gerbangTol', JSON.stringify(gerbangTol));
+    }
+
+    // Fungsi untuk merender tabel
+    function renderTabel(data){
+      tabelBody.innerHTML = "";
+      
+      if(data.length === 0){
+        updateAnalisis([]);
+        return;
+      }
+
+      const maxVal = Math.max(...data.map(d => d.jumlah));
+      const minVal = Math.min(...data.map(d => d.jumlah));
+
+      data.forEach((transaksi, index) => {
+        let highlight = '';
+        if(transaksi.jumlah === maxVal) highlight = 'background:#fff3b0;';
+        else if(transaksi.jumlah === minVal) highlight = 'background:#f8d7da;';
+
+        const row = `
+          <tr style="${highlight}">
+            <td>${index + 1}</td>
+            <td>${transaksi.tanggal}</td>
+            <td>${transaksi.nama}</td>
+            <td>Rp ${transaksi.jumlah.toLocaleString('id-ID')}</td>
+            <td>${transaksi.keterangan}</td>
+            <td>
+              <button class="btn edit" onclick="editData(${index})">Edit</button>
+              <button class="btn delete" onclick="hapusData(${index})">Hapus</button>
+            </td>
+          </tr>
+        `;
+        tabelBody.innerHTML += row;
+      });
+
+      updateAnalisis(data);
+    }
+
+    // Fungsi untuk merender dropdown gerbang tol
+    function renderGerbangTol() {
+      namaSelect.innerHTML = '<option value="">Pilih Gerbang Tol</option>';
+      gerbangTol.forEach(gerbang => {
+        namaSelect.innerHTML += `<option value="${gerbang}">${gerbang}</option>`;
+      });
+    }
+
+    // Fungsi untuk merender daftar gerbang tol
+    function renderListGerbang() {
+      listGerbang.innerHTML = '';
+      totalGerbang.textContent = gerbangTol.length;
+      
+      gerbangTol.forEach((gerbang, index) => {
+        const gerbangItem = document.createElement('div');
+        gerbangItem.className = 'gerbang-item';
+        
+        // Cek apakah gerbang digunakan dalam transaksi
+        const isUsed = transaksi.some(t => t.nama === gerbang);
+        const usageInfo = isUsed ? 
+          `<span style="color: #e74c3c; font-size: 12px;">(digunakan dalam transaksi)</span>` : 
+          `<span style="color: #27ae60; font-size: 12px;">(dapat dihapus)</span>`;
+        
+        gerbangItem.innerHTML = `
+          <div>
+            <strong>${gerbang}</strong>
+            ${usageInfo}
+          </div>
+          <button class="delete-gerbang" onclick="deleteGerbangTol(${index})" ${isUsed ? 'disabled style="background: #95a5a6; cursor: not-allowed;"' : ''}>
+            <i class="fas fa-trash"></i> Hapus
+          </button>
+        `;
+        
+        listGerbang.appendChild(gerbangItem);
+      });
+    }
+
+    // Fungsi untuk menghapus gerbang tol
+    function deleteGerbangTol(index) {
+      const gerbangToDelete = gerbangTol[index];
+      
+      // Cek apakah gerbang digunakan dalam transaksi
+      const isUsed = transaksi.some(t => t.nama === gerbangToDelete);
+      
+      if (isUsed) {
+        alert(`Tidak dapat menghapus "${gerbangToDelete}" karena masih digunakan dalam transaksi!`);
+        return;
+      }
+      
+      if (confirm(`Apakah Anda yakin ingin menghapus gerbang tol "${gerbangToDelete}"?`)) {
+        gerbangTol.splice(index, 1);
+        saveGerbangTol();
+        renderGerbangTol();
+        renderListGerbang();
+        alert(`Gerbang tol "${gerbangToDelete}" berhasil dihapus!`);
+      }
+    }
+
+    // Fungsi edit data
+    function editData(index){
+      const transaksiItem = transaksi[index];
+      
+      document.getElementById("tanggal").value = transaksiItem.tanggal;
+      document.getElementById("nama").value = transaksiItem.nama;
+      document.getElementById("jumlah").value = transaksiItem.jumlah;
+      document.getElementById("keterangan").value = transaksiItem.keterangan;
+      
+      // Hapus data yang akan diedit
+      transaksi.splice(index, 1);
+      saveToLocalStorage();
+      renderTabel(transaksi);
+    }
+
+    // Fungsi hapus data
+    function hapusData(index){
+      if(confirm("Apakah Anda yakin ingin menghapus transaksi ini?")) {
+        transaksi.splice(index, 1);
+        saveToLocalStorage();
+        renderTabel(transaksi);
+        renderListGerbang(); // Perbarui status gerbang tol
+      }
+    }
+
+    // Fungsi update analisis
+    function updateAnalisis(data){
+      if(data.length === 0){
+        totalTransaksi.textContent = '0';
+        totalJumlah.textContent = '0';
+        avgHarian.textContent = '0';
+        avgTransaksi.textContent = '0';
+        hariAktif.textContent = '0';
+        maxTransaksi.textContent = '0';
+        minTransaksi.textContent = '0';
+        
+        // Hapus chart jika ada
+        if(chartBar) {
+          chartBar.destroy();
+          chartBar = null;
+        }
+        if(chartPie) {
+          chartPie.destroy();
+          chartPie = null;
+        }
+        return;
+      }
+
+      // Hitung statistik
+      const total = data.reduce((sum, item) => sum + item.jumlah, 0);
+      const uniqueDates = [...new Set(data.map(item => item.tanggal))];
+      
+      totalTransaksi.textContent = data.length.toLocaleString('id-ID');
+      totalJumlah.textContent = total.toLocaleString('id-ID');
+      avgTransaksi.textContent = (total / data.length).toLocaleString('id-ID');
+      avgHarian.textContent = (total / uniqueDates.length).toLocaleString('id-ID');
+      hariAktif.textContent = uniqueDates.length.toLocaleString('id-ID');
+      maxTransaksi.textContent = Math.max(...data.map(item => item.jumlah)).toLocaleString('id-ID');
+      minTransaksi.textContent = Math.min(...data.map(item => item.jumlah)).toLocaleString('id-ID');
+
+      // Siapkan data untuk chart harian
+      const dailyData = {};
+      data.forEach(item => {
+        if(!dailyData[item.tanggal]) {
+          dailyData[item.tanggal] = 0;
+        }
+        dailyData[item.tanggal] += item.jumlah;
+      });
+
+      const dates = Object.keys(dailyData).sort();
+      const amounts = dates.map(date => dailyData[date]);
+
+      // Buat atau update chart harian
+      const ctxBar = document.getElementById('chartHarian').getContext('2d');
+      if(chartBar) chartBar.destroy();
+      chartBar = new Chart(ctxBar, {
+        type: 'bar',
+        data: {
+          labels: dates,
+          datasets: [{
+            label: 'Jumlah Harian (Rp)',
+            data: amounts,
+            backgroundColor: '#3498db',
+            borderColor: '#2980b9',
+            borderWidth: 1
+          }]
+        },
+        options: {
+          responsive: true,
+          scales: {
+            y: {
+              beginAtZero: true,
+              title: {
+                display: true,
+                text: 'Jumlah (Rp)'
+              }
+            },
+            x: {
+              title: {
+                display: true,
+                text: 'Tanggal'
+              }
+            }
+          }
+        }
+      });
+
+      // Siapkan data untuk chart pie (per gerbang tol)
+      const gateData = {};
+      data.forEach(item => {
+        if(!gateData[item.nama]) {
+          gateData[item.nama] = 0;
+        }
+        gateData[item.nama] += item.jumlah;
+      });
+
+      const gateNames = Object.keys(gateData);
+      const gateAmounts = Object.values(gateData);
+      const colors = ['#3498db', '#e74c3c', '#2ecc71', '#f39c12', '#9b59b6'];
+
+      // Buat atau update chart pie
+      const ctxPie = document.getElementById('chartPie').getContext('2d');
+      if(chartPie) chartPie.destroy();
+      chartPie = new Chart(ctxPie, {
+        type: 'pie',
+        data: {
+          labels: gateNames,
+          datasets: [{
+            data: gateAmounts,
+            backgroundColor: colors,
+            borderWidth: 1
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: {
+              position: 'bottom'
+            },
+            tooltip: {
+              callbacks: {
+                label: function(context) {
+                  return `${context.label}: Rp ${context.raw.toLocaleString('id-ID')}`;
+                }
+              }
+            }
+          }
+        }
+      });
+    }
+
+    // Fungsi filter data
+    function filterData(){
+      const awal = document.getElementById('filterAwal').value;
+      const akhir = document.getElementById('filterAkhir').value;
+      
+      if(!awal || !akhir){
+        alert("Silakan pilih tanggal awal dan akhir!");
+        return;
+      }
+
+      const filteredData = transaksi.filter(item => {
+        return item.tanggal >= awal && item.tanggal <= akhir;
+      });
+      
+      renderTabel(filteredData);
+    }
+
+    // Fungsi reset filter
+    function resetFilter(){
+      document.getElementById('filterAwal').value = '';
+      document.getElementById('filterAkhir').value = '';
+      renderTabel(transaksi);
+    }
+
+    // Fungsi export ke Excel
+    function exportExcel() {
+      if(transaksi.length === 0) {
+        alert("Tidak ada data untuk diexport!");
+        return;
+      }
+
+      const ws = XLSX.utils.json_to_sheet(transaksi);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Transaksi");
+      XLSX.writeFile(wb, "Transaksi_Harian_Gerbang_Tol.xlsx");
+    }
+
+    // Load data saat halaman dimuat
+    document.addEventListener('DOMContentLoaded', function() {
+      renderGerbangTol();
+      renderListGerbang();
+      renderTabel(transaksi);
+    });
+  </script>
+</body>
+</html>
